@@ -1,0 +1,9 @@
+scenario_tag,task,task_encoding,bench_n_train,bench_n_test,bench_washout_macros,bench_hold_ns,log10_sim_budget,optimal_default_k,optimal_i_min,optimal_i_max,optimal_spacing_m,optimal_noise_float,optimal_I_th_A,optimal_lambda0_m,optimal_dt_ns,optimal_store_every,optimal_motif,best_metric,metric_name,maximize_metric
+iris_tiny,iris,0,120,30,0,20.0,5.1,14.2,0.52,1.42,4.85e-05,1.0,17.35e-3,850e-9,5e-4,400,auxiliary,0.96,accuracy_test,True
+iris_mid,iris,0,112,38,0,20.0,5.1,16.0,0.48,1.48,5.0e-05,0.0,17.0e-3,848e-9,5e-4,320,chain,0.973,accuracy_test,True
+iris_bigtest,iris,0,90,60,0,20.0,5.0,18.5,0.55,1.35,5.2e-05,1.0,18.0e-3,852e-9,4.5e-4,400,relay,0.93,accuracy_test,True
+narma_s,narma10,1,80,25,35,0.2,4.2,11.0,0.5,1.5,5e-05,1.0,17.35e-3,850e-9,5e-4,40,auxiliary,0.55,nrmse_test,False
+narma_m,narma10,1,200,50,60,0.35,4.5,15.0,0.45,1.55,4.8e-05,0.0,17.35e-3,850e-9,5e-4,45,chain,0.42,nrmse_test,False
+narma_l,narma10,1,400,100,120,0.5,4.8,19.0,0.5,1.45,5.5e-05,1.0,16.5e-3,855e-9,5e-4,50,auxiliary,0.38,nrmse_test,False
+narma_xl,narma10,1,600,150,200,1.0,5.0,22.0,0.48,1.52,5e-05,0.0,17.35e-3,850e-9,5e-4,40,mixed_master,0.33,nrmse_test,False
+iris_longsim,iris,0,112,38,0,40.0,5.2,13.0,0.5,1.5,4.9e-05,1.0,17.35e-3,850e-9,5e-4,400,competitive,0.965,accuracy_test,True

@@ -1,0 +1,15 @@
+{
+  "n_scenarios": 8,
+  "holdout_fraction": 0.2,
+  "r2_continuous_uniform_avg": -18.066286954330337,
+  "motif_accuracy_holdout": 0.0,
+  "motif_classes": [
+    "auxiliary",
+    "chain",
+    "competitive",
+    "mixed_master",
+    "relay"
+  ],
+  "cv": null,
+  "source_csv": "/Users/charles/Desktop/2026RESEARCHCLAIRE/Mar24GitUpdates/LK_DelayedBased/fixtures/optimal_per_scenario_synthetic.csv"
+}

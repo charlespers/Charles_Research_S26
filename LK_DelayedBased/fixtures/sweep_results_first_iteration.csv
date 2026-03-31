@@ -1,0 +1,17 @@
+benchmark,motif,default_k,noise_on,seed,metric,metric_name
+iris,auxiliary,10.0,True,0,0.9473684210526315,accuracy_test
+iris,auxiliary,15.0,True,0,0.9736842105263158,accuracy_test
+iris,auxiliary,20.0,True,0,0.9605263157894737,accuracy_test
+iris,chain,12.0,True,0,0.9342105263157895,accuracy_test
+iris,chain,15.0,False,0,0.9868421052631579,accuracy_test
+iris,relay,15.0,True,0,0.9210526315789473,accuracy_test
+iris,competitive,18.0,True,0,0.9552631578947368,accuracy_test
+iris,mixed_master,15.0,True,0,0.9684210526315789,accuracy_test
+narma10,auxiliary,10.0,True,0,0.612,nrmse_test
+narma10,auxiliary,15.0,True,0,0.541,nrmse_test
+narma10,auxiliary,20.0,True,0,0.498,nrmse_test
+narma10,chain,12.0,True,0,0.683,nrmse_test
+narma10,chain,15.0,False,0,0.455,nrmse_test
+narma10,relay,15.0,True,0,0.589,nrmse_test
+narma10,competitive,18.0,True,0,0.522,nrmse_test
+narma10,mixed_master,15.0,True,0,0.501,nrmse_test

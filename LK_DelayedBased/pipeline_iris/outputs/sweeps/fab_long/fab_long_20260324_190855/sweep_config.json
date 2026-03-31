@@ -1,0 +1,54 @@
+{
+  "run_id": "fab_long_20260324_190855",
+  "design": "factorial",
+  "n_lhc_samples": 24,
+  "n_replicates": 1,
+  "n_run_rows": 4,
+  "n_long_rows": 4,
+  "scenarios": [
+    {
+      "scenario_tag": "iris_default",
+      "task": "iris",
+      "test_size": 0.25,
+      "base_seed": 30
+    }
+  ],
+  "fab_grid": {
+    "motifs": [
+      "auxiliary",
+      "chain"
+    ],
+    "default_ks": [
+      12.0,
+      18.0
+    ],
+    "i_mins": [
+      0.5
+    ],
+    "i_maxs": [
+      1.5
+    ],
+    "spacing_ms": [
+      5e-05
+    ],
+    "noise_flags": [
+      true
+    ],
+    "I_th_As": [
+      0.01735
+    ],
+    "lambda0_ms": [
+      8.5e-07
+    ],
+    "dt_ns_s": [
+      0.0005
+    ],
+    "store_everys": [
+      400
+    ],
+    "augment_inputs": [
+      true
+    ]
+  },
+  "seed": 0
+}

@@ -1,0 +1,15 @@
+{
+  "run_id": "sweep_20260324_163520",
+  "benchmark": "narma",
+  "motifs": [
+    "auxiliary"
+  ],
+  "default_ks": [
+    12.0,
+    18.0
+  ],
+  "noise_flags": [
+    true
+  ],
+  "seed": 1
+}

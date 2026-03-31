@@ -1,0 +1,23 @@
+{
+  "benchmark": "iris",
+  "run_id": "iris_baseline_20260324_164909",
+  "motif": "auxiliary",
+  "dt_ns": 0.0005,
+  "store_every": 400,
+  "t_span_ns": [
+    0.0,
+    20.0
+  ],
+  "washout_ns": 10.0,
+  "noise_on": true,
+  "base_seed": 30,
+  "default_k": 15.0,
+  "spacing_m": 5e-05,
+  "lambda0_m": 8.5e-07,
+  "n_air": 1.0,
+  "I_th_A": 0.01735,
+  "i_min": 0.5,
+  "i_max": 1.5,
+  "test_size": 0.25,
+  "random_state_split": 0
+}

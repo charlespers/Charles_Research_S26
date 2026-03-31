@@ -1,0 +1,53 @@
+{
+  "n_scenarios": 8,
+  "holdout_fraction": 0.2,
+  "r2_continuous_mlp_holdout": -18611915.851888668,
+  "r2_continuous_hgb_holdout": -1.7378021563502544,
+  "r2_continuous_knn_holdout": -2.039227501181017,
+  "motif_accuracy_holdout": 0.0,
+  "motif_classes": [
+    "auxiliary",
+    "chain",
+    "competitive",
+    "mixed_master",
+    "relay"
+  ],
+  "loocv_by_scenario": {
+    "mlp_r2_mean": NaN,
+    "mlp_r2_std": NaN,
+    "hgb_r2_mean": NaN,
+    "hgb_r2_std": NaN,
+    "knn_r2_mean": NaN,
+    "knn_r2_std": NaN,
+    "n_splits": 8
+  },
+  "baselines": {
+    "constant_r2_holdout": -0.9775137129470212
+  },
+  "primary_regressor": "hist_gbrt",
+  "per_output": {
+    "mae_mlp_holdout": {
+      "optimal_default_k": 1.1975120937003538,
+      "optimal_i_min": 0.055923794533007776,
+      "optimal_i_max": 0.14813283493715457,
+      "optimal_spacing_m": 5.7671897870062375e-06,
+      "optimal_noise_float": 1.4433453075643479,
+      "optimal_I_th_A": 0.0013207147671435802,
+      "optimal_lambda0_m": 6.632685701315592e-09,
+      "optimal_dt_ns": 0.24992848146736085,
+      "optimal_store_every": 121.0482542036281
+    },
+    "ycols": [
+      "optimal_default_k",
+      "optimal_i_min",
+      "optimal_i_max",
+      "optimal_spacing_m",
+      "optimal_noise_float",
+      "optimal_I_th_A",
+      "optimal_lambda0_m",
+      "optimal_dt_ns",
+      "optimal_store_every"
+    ]
+  },
+  "source_csv": "/Users/charles/Desktop/2026RESEARCHCLAIRE/Mar24GitUpdates/LK_DelayedBased/fixtures/optimal_per_scenario_synthetic.csv"
+}

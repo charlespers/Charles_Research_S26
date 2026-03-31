@@ -1,0 +1,3 @@
+benchmark,motif,default_k,noise_on,seed,metric,metric_name
+narma10,auxiliary,12.0,True,1,1.2116381363331925,nrmse_test
+narma10,auxiliary,18.0,True,1,1.218814099442193,nrmse_test

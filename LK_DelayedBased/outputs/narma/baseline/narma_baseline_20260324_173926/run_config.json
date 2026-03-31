@@ -1,0 +1,19 @@
+{
+  "benchmark": "narma10_model7",
+  "run_id": "narma_baseline_20260324_173926",
+  "train_size": 800,
+  "test_size": 200,
+  "washout": 200,
+  "seed": 0,
+  "motif": "auxiliary",
+  "dt_ns": 0.0005,
+  "store_every": 400,
+  "hold_ns": 20.0,
+  "noise_on": true,
+  "sim_seed": 0,
+  "default_k": 15.0,
+  "washout_readout": 0,
+  "augment_input": true,
+  "i_min": 0.5,
+  "i_max": 1.5
+}

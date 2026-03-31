@@ -1,0 +1,5 @@
+,default_k,noise_int,motif_code,metric
+default_k,1.0,,,1.0
+noise_int,,,,
+motif_code,,,,
+metric,1.0,,,1.0
