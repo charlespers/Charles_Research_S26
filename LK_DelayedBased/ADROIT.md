@@ -1,4 +1,8 @@
-Once on the log in node you need to run the following one time - after you can skip this on subsequent sections
+# Princeton Adroit GPU Cluster — Setup & Workflow
+
+## One-time environment setup
+
+Run these once on the **login node** (no GPU needed):
 
 ```bash
 module load anaconda3/2024.2
@@ -8,77 +12,122 @@ pip install -r requirements.txt
 pip install "jax[cuda12]"
 ```
 
-The `CUDA_ERROR_NO_DEVICE` warning during install is normal — the login node has no GPU.
+`CUDA_ERROR_NO_DEVICE` during install is normal — login node has no GPU.
 
-Make sure to copy the code over to adroit something like
+## Get the code on Adroit
 
 ```bash
-mkdir <file_name>
-cd /<file_name>
-git clone <your-repo-url>
-cd <file_name/LK_DelayedBased>
+mkdir ~/lk_gpu_proj
+cd ~/lk_gpu_proj
+git clone <your-repo-url> LK_DelayedBased
+cd LK_DelayedBased
 mkdir -p logs
 ```
 
-To update: `git pull`
+To update after local changes: `git pull`
 
-Thene very session you must run
+## Session startup (every session)
 
 ```bash
 module load anaconda3/2024.2
 conda activate lk_gpu
-cd <file_name>/LK_DelayedBased
+cd ~/lk_gpu_proj/LK_DelayedBased
 ```
 
-For intereactive compute
+---
+
+## Complete paper generation workflow
+
+### Step 0 — Interactive sanity check (optional, ~2 min)
 
 ```bash
-srun --partition=gpu --gres=gpu:1 --mem=16G --time=00:30:00 --pty bash
-# prompt changes to a compute node, then:
-module load anaconda3/2024.2
-conda activate lk_gpu
-cd /LK_DelayedBased
-
+srun --partition=gpu --gres=gpu:1 --mem=8G --time=00:10:00 --pty bash
+module load anaconda3/2024.2 && conda activate lk_gpu
+cd ~/lk_gpu_proj/LK_DelayedBased
 python pipeline_iris/run_pipeline.py --quick --gpu
 ```
 
-For batch jobs
-
-**Quick sweep** (`jobs/quick_sweep.slurm`):
+### Step 1 — GPU benchmark timing (Fig 1 data)
 
 ```bash
-#!/bin/bash
-#SBATCH --job-name=iris_quick
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --mem=16G
-#SBATCH --time=00:30:00
-#SBATCH --output=logs/quick_%j.out
-
-mkdir -p logs
-module purge
-module load anaconda3/2024.2
-conda activate lk_gpu
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
-cd $SLURM_SUBMIT_DIR
-
-python pipeline_iris/run_pipeline.py --quick --gpu --sweep-only
+sbatch jobs/benchmark_timing.slurm
+# Produces: outputs/timing/timing_results.csv  (~15 min)
 ```
 
-**Standard sweep** (`jobs/standard_sweep.slurm`) — same as above but:
+### Step 2 — Standard fab sweep (Fig 2 and meta-learning data)
 
 ```bash
-#SBATCH --mem=32G
-#SBATCH --time=08:00:00
-...
-python pipeline_iris/run_pipeline.py --standard-grid --gpu
+sbatch jobs/standard_sweep.slurm
+# Produces: pipeline_iris/outputs/sweeps/fab_long/*/sweep_long.csv  (~3-8 hr)
 ```
 
-**Submit / monitor:**
+Wait for both Step 1 and Step 2 to finish before Step 3.
+
+### Step 3 — Train MLP + generate all 9 paper figures
 
 ```bash
-sbatch jobs/quick_sweep.slurm
+sbatch jobs/generate_paper.slurm
+# Produces: paper/figures/fig{1..9}_*.{pdf,png}  (~30 min on GPU)
+```
+
+### Step 4 — Compile paper
+
+```bash
+cd paper
+pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
+```
+
+You need `neurips_2024.sty` from neurips.cc. Download and place in `paper/`.
+
+---
+
+## Individual job files
+
+| File | Purpose | Est. time |
+|------|---------|-----------|
+| `jobs/quick_sweep.slurm` | 3-scenario quick sweep (dev/test) | ~5 min |
+| `jobs/standard_sweep.slurm` | Full 7k-config sweep (paper data) | ~3–8 hr |
+| `jobs/benchmark_timing.slurm` | CPU vs GPU timing sweep | ~15 min |
+| `jobs/generate_paper.slurm` | MLP harness + all 9 figures | ~30 min |
+
+---
+
+## Submit, monitor, cancel
+
+```bash
+sbatch jobs/<name>.slurm
 squeue -u $USER
-tail -f logs/quick_<JOBID>.out
+tail -f logs/<name>_<JOBID>.out
 scancel <JOBID>
+```
+
+---
+
+## Key output locations
+
+```
+outputs/timing/timing_results.csv          # GPU speedup data (Fig 1)
+outputs/timing/timing_summary.json
+pipeline_iris/outputs/sweeps/fab_long/     # Sweep results (Figs 2, 3, 9)
+outputs/analysis/mlp_classification/      # MLP harness outputs (Figs 4, 5, 6)
+paper/figures/                             # All 9 paper figures
+```
+
+---
+
+## Running scripts manually (interactive compute node)
+
+```bash
+srun --partition=gpu --gres=gpu:1 --mem=32G --time=02:00:00 --pty bash
+module load anaconda3/2024.2 && conda activate lk_gpu
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+cd ~/lk_gpu_proj/LK_DelayedBased
+
+# GPU benchmark
+python benchmark_timing.py
+
+# Train MLP + figures (after sweep)
+SWEEP=$(ls -t pipeline_iris/outputs/sweeps/fab_long/*/sweep_long.csv | head -1)
+python mlp_classification_harness.py --sweep-csv "$SWEEP"
+python generate_figures.py --sweep-csv "$SWEEP"
 ```

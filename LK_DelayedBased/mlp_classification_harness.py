@@ -96,12 +96,20 @@ def _loocv_regressor(
     trues: list[np.ndarray] = []
 
     for tr_idx, te_idx in logo.split(X, Y, groups):
-        sc = StandardScaler()
-        X_tr = sc.fit_transform(X[tr_idx])
-        X_te = sc.transform(X[te_idx])
+        sc_x = StandardScaler()
+        X_tr = sc_x.fit_transform(X[tr_idx])
+        X_te = sc_x.transform(X[te_idx])
+        # Scale outputs column-wise; guard against near-zero std (constant columns)
+        Y_mean = Y[tr_idx].mean(axis=0)
+        Y_std  = Y[tr_idx].std(axis=0)
+        Y_std  = np.where(Y_std < 1e-12, 1.0, Y_std)  # keep constant cols in original units
+        Y_tr   = (Y[tr_idx] - Y_mean) / Y_std
         m = make_model()
-        m.fit(X_tr, Y[tr_idx])
-        preds.append(m.predict(X_te))
+        m.fit(X_tr, Y_tr)
+        Y_pred_scaled = m.predict(X_te)
+        if Y_pred_scaled.ndim == 1:
+            Y_pred_scaled = Y_pred_scaled.reshape(1, -1)
+        preds.append(Y_pred_scaled * Y_std + Y_mean)
         trues.append(Y[te_idx])
 
     y_true = np.vstack(trues)
@@ -147,11 +155,13 @@ def run(optimal_csv: Path, output_dir: Path) -> None:
     df = _load_and_prepare(optimal_csv)
     print(f"Loaded {len(df)} classification scenarios from {optimal_csv}")
 
-    if len(df) < 4:
+    if len(df) < 3:
         raise ValueError(
-            f"LOOCV requires at least 4 scenarios; got {len(df)}. "
+            f"LOOCV requires at least 3 scenarios; got {len(df)}. "
             "Pass a richer --optimal-csv or run the sweep first."
         )
+    if len(df) < 7:
+        print(f"  Warning: only {len(df)} scenarios — LOOCV results will be low-variance estimates.")
 
     X      = df[SCENARIO_FEATURE_COLS].values.astype(np.float64)
     ycols  = [c for c in OPTIMAL_COL_ORDER if c in df.columns]

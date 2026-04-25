@@ -265,8 +265,8 @@ pump currents.
 The simulation window is 20\,ns with a 10\,ns washout transient;
 the Euler step is $\Delta t = 5 \times 10^{-4}$\,ns (40\,000 steps total).
 The readout is a scikit-learn \citep{scikit-learn} Ridge classifier.
-All timing benchmarks use a Mac with Apple Silicon (Metal backend) unless
-otherwise noted; GPU acceleration is via JAX \citep{bradbury2018jax}.
+All timing benchmarks use the Princeton Adroit cluster (NVIDIA A100, CUDA 12.x)
+unless otherwise noted; GPU acceleration is via JAX \citep{bradbury2018jax}.
 
 \subsection{Baselines}
 We compare the optimized photonic reservoir against four classical classifiers
@@ -382,10 +382,10 @@ This confirms the reservoir's representational power without gradient training.
   \includegraphics[width=\linewidth]{fig7_trajectories.pdf}
   \caption{%
     \textbf{Photon intensity $S_i(t)$ and carrier number $N_i(t)$ for one Iris
-    sample under three coupling motifs.}
-    Dashed vertical line marks the washout boundary.
-    Different motifs produce qualitatively distinct attractor dynamics,
-    explaining their differing classification capabilities.
+    sample under three coupling motifs (with spontaneous-emission noise).}
+    Dashed vertical line marks the 10\,ns washout boundary.
+    The coupling topology shapes the inter-laser synchronization and
+    temporal modulation patterns visible after the washout period.
   }
   \label{fig:trajectories}
 \end{figure}

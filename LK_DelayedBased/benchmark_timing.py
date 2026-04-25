@@ -97,7 +97,7 @@ def benchmark_one(
 
     # Correctness: noise_off → CPU and GPU features should agree to <1e-5
     if not cfg["noise_on"]:
-        max_err = float(np.max(np.abs(F_gpu2 - F_cpu)))
+        max_err = float(np.max(np.abs(np.asarray(F_gpu2) - F_cpu)))
         correctness = bool(max_err < 1e-5)
     else:
         correctness = True  # stochastic — cannot compare directly

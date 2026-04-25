@@ -213,8 +213,12 @@ def fig3_baseline_comparison(sweep_csv: Path | None, out: Path) -> None:
         store_every=400, noise_on=best_noise, default_k=best_k,
     )
 
-    N_REPS = 5
-    N_FOLDS = 5
+    # On CPU use reduced iterations to keep runtime under ~10 min;
+    # on GPU (Adroit) use full 5×5 for publication-quality error bars.
+    if _use_gpu:
+        N_REPS, N_FOLDS = 5, 5
+    else:
+        N_REPS, N_FOLDS = 1, 3
 
     models = {
         "Ridge":     Pipeline([("sc", StandardScaler()), ("m", RidgeClassifier())]),
@@ -225,7 +229,7 @@ def fig3_baseline_comparison(sweep_csv: Path | None, out: Path) -> None:
 
     results: dict[str, list[float]] = {k: [] for k in list(models.keys()) + ["Reservoir"]}
 
-    print("  Running baseline experiments (5×5-fold)...")
+    print(f"  Running baseline experiments ({N_REPS}×{N_FOLDS}-fold, {'GPU' if _use_gpu else 'CPU'})...")
     for rep in range(N_REPS):
         skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=rep)
         for tr, te in skf.split(X, y):
@@ -291,6 +295,8 @@ def fig4_regressor_r2(mlp_dir: Path, out: Path) -> None:
         "optimal_store_every":  "store",
     }
 
+    CLIP_MIN = -1.0  # values below this are shown clipped with a marker
+
     fig, ax = plt.subplots(figsize=(7.0, 3.2))
     n = len(params)
     w = 0.25
@@ -298,15 +304,22 @@ def fig4_regressor_r2(mlp_dir: Path, out: Path) -> None:
     for mi, (model, color) in enumerate(zip(models, COLORS)):
         sub = df[df["model"] == model].set_index("param_name")
         r2s = [float(sub.loc[p, "r2_mean"]) if p in sub.index else 0.0 for p in params]
-        ax.barh(xs + mi * w - w, r2s, height=w, label=model, color=color, alpha=0.85)
+        r2s_clipped = [max(v, CLIP_MIN) for v in r2s]
+        bars = ax.barh(xs + mi * w - w, r2s_clipped, height=w,
+                       label=model, color=color, alpha=0.85)
+        # Mark bars that were clipped (actual value << -1)
+        for xi, (raw, clipped) in enumerate(zip(r2s, r2s_clipped)):
+            if raw < CLIP_MIN - 0.05:
+                ax.text(CLIP_MIN - 0.02, xs[xi] + mi * w - w,
+                        "◀", ha="right", va="center", fontsize=6, color=color)
 
     ax.set_yticks(xs)
     ax.set_yticklabels([short.get(p, p) for p in params])
     ax.axvline(0, color="black", linewidth=0.8)
-    ax.set_xlabel("LOOCV R²")
+    ax.set_xlabel("LOOCV R²  (◀ = off-scale)")
     ax.set_title("MLP regressor: fab-parameter prediction accuracy (LOOCV)")
     ax.legend(loc="lower right", fontsize=8)
-    ax.set_xlim(-1.0, 1.05)
+    ax.set_xlim(CLIP_MIN, 1.05)
     fig.tight_layout()
     _save(fig, out)
 
@@ -427,7 +440,7 @@ def fig7_trajectories(out: Path) -> None:
             t_span_ns=t_span_ns, dt_ns=dt_ns, y0=y0,
             params=params, K=K, tau_ns=tau_ns,
             cos_phi=cos_phi, sin_phi=sin_phi,
-            noise_on=False, seed=0, store_every=store_every, P_step=None,
+            noise_on=True, seed=col, store_every=store_every, P_step=None,
         )
         S = (x ** 2 + y ** 2)  # photon intensity per laser
 
@@ -444,6 +457,11 @@ def fig7_trajectories(out: Path) -> None:
         ax_s.axvline(washout_ns, color="gray", linestyle=":", linewidth=0.8)
         ax_n.axvline(washout_ns, color="gray", linestyle=":", linewidth=0.8)
         ax_s.set_title(f"{motif}", fontsize=9)
+        # Cap y-axis at 2× post-washout median max to suppress initial transient spike
+        S_post = S[t >= washout_ns]
+        if S_post.size > 0:
+            cap = max(float(np.percentile(S_post, 99)) * 3, 1e-6)
+            ax_s.set_ylim(bottom=0, top=cap)
         if col == 0:
             ax_s.set_ylabel("Intensity $S_i$")
             ax_n.set_ylabel("Carriers $N_i$ (×10⁸)")
@@ -501,12 +519,20 @@ def fig8_ablation(out: Path) -> None:
             F_tr, _ = build_reservoir_dataset(X_tr01, y_tr, base_seed=30, **kw)
             F_te, _ = build_reservoir_dataset(X_te01, y_te, base_seed=10030, **kw)
         elapsed = _time.perf_counter() - t0
+        F_tr = np.asarray(F_tr)
+        F_te = np.asarray(F_te)
+        if np.any(~np.isfinite(F_tr)) or np.any(~np.isfinite(F_te)):
+            return float("nan"), elapsed  # numerically unstable config
         clf = Pipeline([("sc", StandardScaler()), ("m", RidgeClassifier())])
         clf.fit(F_tr, y_tr)
         acc = accuracy_score(y_te, clf.predict(F_te))
         return float(acc), elapsed
 
-    dt_vals = [1e-3, 5e-4, 2e-4, 1e-4, 5e-5]
+    # Fine dt steps multiply simulation time; on CPU cap at 2e-4 to stay under ~10 min.
+    if _use_gpu:
+        dt_vals = [1e-3, 5e-4, 2e-4, 1e-4, 5e-5]
+    else:
+        dt_vals = [1e-3, 5e-4, 2e-4]
     store_vals = [100, 200, 400, 800, 1600]
 
     print("  Ablation: sweeping dt_ns ...", flush=True)
@@ -515,7 +541,8 @@ def fig8_ablation(out: Path) -> None:
         acc, t = run_one(dt, 400)
         accs_dt.append(acc)
         times_dt.append(t)
-        print(f"    dt={dt:.0e}  acc={acc:.3f}  t={t:.2f}s", flush=True)
+        tag = "unstable" if np.isnan(acc) else f"acc={acc:.3f}"
+        print(f"    dt={dt:.0e}  {tag}  t={t:.2f}s", flush=True)
 
     print("  Ablation: sweeping store_every ...", flush=True)
     accs_se, times_se = [], []
@@ -528,7 +555,15 @@ def fig8_ablation(out: Path) -> None:
     fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_WIDE)
 
     ax = axes[0, 0]
-    ax.plot(dt_vals, accs_dt, "o-", color=COLORS[0], markersize=5)
+    # Filter NaN (numerically unstable) points; show only stable configs
+    dt_arr   = np.array(dt_vals)
+    accs_arr = np.array(accs_dt, dtype=float)
+    stable   = np.isfinite(accs_arr)
+    ax.plot(dt_arr[stable], accs_arr[stable], "o-", color=COLORS[0], markersize=5)
+    if (~stable).any():
+        ax.scatter(dt_arr[~stable], np.zeros(np.sum(~stable)),
+                   marker="x", color="red", s=40, zorder=5, label="unstable")
+        ax.legend(fontsize=7)
     ax.set_xscale("log")
     ax.invert_xaxis()
     ax.set_xlabel("Time step dt (ns)")
