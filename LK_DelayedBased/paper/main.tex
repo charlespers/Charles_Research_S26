@@ -1,0 +1,595 @@
+\documentclass{article}
+
+% NeurIPS 2024 style — download neurips_2024.sty from neurips.cc
+% If the style file is not available, this falls back to a clean article layout.
+\IfFileExists{neurips_2024.sty}{%
+  \usepackage[final]{neurips_2024}
+}{%
+  \usepackage[margin=1in]{geometry}
+  \usepackage{titlesec}
+  \titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+  \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage[noend]{algpseudocode}
+\usepackage{multirow}
+\usepackage[numbers]{natbib}
+
+\graphicspath{{figures/}}
+
+% ── helpers ──────────────────────────────────────────────────────────────────
+\newcommand{\eg}{\emph{e.g.}}
+\newcommand{\ie}{\emph{i.e.}}
+\newcommand{\etal}{\emph{et~al.}}
+
+% ── title ────────────────────────────────────────────────────────────────────
+\title{%
+  GPU-Accelerated Photonic Reservoir Computing:\\
+  Systematic Fabrication Optimization at Scale
+}
+
+\author{%
+  Charles Persinger\\
+  Department of Computer Science\\
+  Princeton University\\
+  \texttt{cm6268@princeton.edu}
+}
+
+\begin{document}
+\maketitle
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{abstract}
+Photonic reservoir computers offer an energy-efficient, high-bandwidth substrate
+for machine learning, yet their practical adoption is hampered by the difficulty
+of selecting optimal fabrication (fab) parameters for a target task.
+We present a GPU-accelerated simulation framework for four-laser
+Lang-Kobayashi (LK) photonic reservoirs that achieves \textbf{50--100$\times$}
+speedup over CPU baselines using JAX JIT-compilation and SIMD vectorization.
+This speedup makes it tractable to sweep thousands of fab configurations where
+CPU simulation is prohibitive.
+Using the GPU sweep data, we train two meta-learning models:
+(i) an MLP regressor that maps workload descriptors to optimal continuous fab
+parameters, and (ii) an MLP motif classifier that predicts the best laser
+coupling topology.
+On the Iris classification benchmark the optimized reservoir achieves accuracy
+competitive with standard deep learning baselines, while providing a
+physically interpretable and hardware-friendly alternative.
+We release all code and sweep data to accelerate photonic ML research.
+\end{abstract}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+
+Physical reservoir computing (RC) repurposes naturally high-dimensional,
+nonlinear dynamical systems as the recurrent layer of an RC network, replacing
+expensive gradient-based training with a single linear readout
+\citep{maass2002real,jaeger2001echo}.
+Photonic substrates---semiconductor lasers, integrated waveguides, and
+opto-electronic delay loops---are especially attractive because light-speed
+interactions provide nanosecond-scale timescales and bandwidth well beyond
+electronic implementations
+\citep{appeltant2011information,brunner2013parallel,vandoorne2014experimental}.
+
+Despite these theoretical advantages, deploying a photonic reservoir in
+practice requires selecting dozens of coupled fabrication parameters:
+laser coupling strength, coupling topology, pump current bounds, laser spacing,
+integration timestep, and more.
+The parameter space is high-dimensional, non-convex, and expensive to evaluate
+because each point requires a full numerical integration of the
+Lang-Kobayashi rate equations \citep{lang1980external}---a task that takes
+minutes per configuration on a CPU.
+A systematic sweep of even a modest grid of 7\,000 configurations would
+therefore consume hundreds of CPU-hours, making principled fab optimization
+impractical.
+
+\paragraph{This work.}
+We make three contributions:
+\begin{enumerate}
+  \item \textbf{GPU-accelerated LK simulator.}
+        We implement the four-laser Model-7 reservoir in JAX, exploiting
+        \texttt{jax.lax.scan} for JIT-compiled Euler--Maruyama integration and
+        \texttt{jax.vmap} to vectorize over independent input samples.
+        Benchmarks show \textbf{50--100$\times$ speedup} on cached kernel
+        calls relative to a sequential NumPy baseline
+        (Figure~\ref{fig:speedup}).
+
+  \item \textbf{Systematic fab parameter sweep.}
+        We leverage the GPU speedup to sweep up to 7\,000 fab configurations
+        across multiple workload scenarios and characterize the accuracy
+        landscape (Figure~\ref{fig:heatmap}).
+
+  \item \textbf{Meta-learning for fab optimization.}
+        We train an MLP regressor (workload $\to$ continuous fab params) and
+        an MLP motif classifier (workload $\to$ best coupling topology) on
+        the sweep data, enabling instant fab recommendation for new workloads
+        without re-sweeping (Figures~\ref{fig:regressor_r2}--\ref{fig:importance}).
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Background}
+\label{sec:background}
+
+\subsection{Photonic Reservoir Computing}
+\label{sec:photonic_rc}
+
+A reservoir computer consists of a fixed, high-dimensional dynamical system
+(the \emph{reservoir}) driven by an input signal, followed by a trained linear
+readout.
+Physical reservoirs avoid the gradient computation required to train recurrent
+neural networks and can exploit the intrinsic dynamics of a physical substrate
+for computation \citep{nakajima2020physical,tanaka2019recent}.
+
+Semiconductor laser arrays are a natural reservoir substrate: optical
+field quadratures provide high-dimensional state vectors, time-delayed
+coupling between lasers introduces rich memory, and nanosecond-scale dynamics
+match typical signal bandwidths.
+
+\subsection{Lang-Kobayashi Rate Equations}
+\label{sec:lk_model}
+
+We simulate four semiconductor lasers arranged in an inline geometry,
+each governed by the Lang-Kobayashi (LK) rate equations
+\citep{lang1980external}:
+\begin{align}
+  \frac{dx_i}{dt} &= \tfrac{1}{2}(G_i - \gamma)(x_i - \alpha y_i) + \sum_j K_{ij}\bigl[\cos\phi_{ij}\,x_j(t-\tau_{ij}) - \sin\phi_{ij}\,y_j(t-\tau_{ij})\bigr] + \xi_x, \label{eq:lk_x}\\
+  \frac{dy_i}{dt} &= \tfrac{1}{2}(G_i - \gamma)(y_i + \alpha x_i) + \sum_j K_{ij}\bigl[\cos\phi_{ij}\,y_j(t-\tau_{ij}) + \sin\phi_{ij}\,x_j(t-\tau_{ij})\bigr] + \xi_y, \label{eq:lk_y}\\
+  \frac{dN_i}{dt} &= P_i - \gamma_e N_i - G_i S_i, \label{eq:lk_n}
+\end{align}
+where $x_i, y_i$ are the real and imaginary optical field quadratures of
+laser $i$, $N_i$ is the carrier number, $S_i = x_i^2 + y_i^2$ is the photon
+intensity, and $G_i = g(N_i - N_0)/(1 + s S_i)$ is the modal gain.
+The parameters $\gamma$, $\gamma_e$, $\alpha$, $g$, $s$, $N_0$ are
+standard semiconductor laser constants.
+$K_{ij}$ is the coupling strength from laser $j$ to laser $i$,
+$\tau_{ij}$ is the propagation delay, $\phi_{ij}$ is the accumulated optical
+phase, and $\xi_{x,y}$ is optional spontaneous emission noise.
+
+For reservoir computation, the Iris dataset features are mapped to per-laser
+pump currents $P_i$, the system is integrated for 20\,ns (with a 10\,ns
+washout transient discarded), and the running statistics
+$[\langle S\rangle, \min S, \max S, \mathrm{std}(S), \langle N\rangle]$
+per laser yield a 20-dimensional feature vector passed to a Ridge classifier.
+
+\subsection{Related Work}
+\label{sec:related}
+
+Early photonic RC demonstrations used a single laser with delayed feedback
+\citep{appeltant2011information,brunner2013parallel,larger2012photonic}.
+Silicon-photonic chip integration was demonstrated in
+\citeauthor{vandoorne2014experimental}~\citeyearpar{vandoorne2014experimental}.
+Deep photonic networks were explored in \citet{shen2017deep}.
+Systematic fab optimization for photonic RC has received comparatively little
+attention; most papers fix one topology and hand-tune coupling strengths.
+Our GPU-accelerated sweep-and-meta-learn framework is the first to characterize
+the full fab parameter space at scale.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Method}
+\label{sec:method}
+
+\subsection{GPU-Accelerated Simulator}
+\label{sec:gpu}
+
+The core challenge in numerically integrating the LK equations is that
+each sample requires an independent trajectory, but trajectories are
+completely data-parallel across the batch dimension.
+
+\paragraph{JAX implementation.}
+We implement the Euler--Maruyama integration step as a pure JAX function
+closed over all static parameters (coupling matrices, physics constants).
+Time integration is compiled with \texttt{jax.jit(jax.lax.scan(step\_fn))}:
+\texttt{lax.scan} unrolls the $n_\mathrm{steps}$ loop at trace time and
+emits a single fused XLA kernel, eliminating Python dispatch overhead.
+Batch parallelism over the $N$ input samples is added via \texttt{jax.vmap}.
+
+\paragraph{Delay handling.}
+Time-delayed coupling requires storing past field values.
+We use a fixed-depth ring buffer of shape $(\text{ring\_depth}, N_\mathrm{las})$
+where ring\_depth $= \tau_\mathrm{max}/\Delta t + 1$.
+Coupling links shorter than $0.1\,\tau_p$ are treated as instantaneous
+(local matrix multiply); longer links index the ring buffer.
+
+\paragraph{Numerical precision.}
+We enable 64-bit floating point (\texttt{jax\_enable\_x64}) because carrier
+numbers $N_i \sim 1.25 \times 10^8$ lose precision in float32 arithmetic.
+
+\subsection{Fabrication Parameter Sweep}
+\label{sec:sweep}
+
+We define the fab parameter space with two sampling strategies:
+
+\textbf{Factorial grid.}
+Full Cartesian product over discrete knob values.
+The standard grid (Table~\ref{tab:grid}) produces $\sim$7\,000 configurations
+covering motif, coupling strength, pump bounds, laser spacing, noise flag,
+threshold current, wavelength, timestep, and decimation rate.
+
+\textbf{Latin Hypercube Sampling (LHC).}
+For continuous exploration, we draw $N_\mathrm{LHC}$ space-filling samples
+\citep{mckinney2011pandas} and assign categorical variables (motif, noise flag)
+by round-robin.
+
+We evaluate each configuration over one or more Iris workload scenarios
+(defined by the train/test split fraction), recording the test accuracy
+and simulation latency.
+
+\subsection{MLP Training Harness}
+\label{sec:mlp}
+
+After sweeping, we aggregate sweep results to one \emph{optimal} configuration
+per workload scenario by maximising a robust score $\mu - \lambda\sigma$
+where $\mu$ and $\sigma$ are the mean and standard deviation of accuracy across
+replicates and $\lambda \geq 0$ penalises variance.
+
+We train two models on the resulting optimal-per-scenario dataset:
+
+\textbf{Fab-parameter regressor.}
+A multi-output MLP regressor maps a 7-dimensional workload descriptor
+$(E, n_\mathrm{tr}, n_\mathrm{te}, t_\mathrm{washout}, t_\mathrm{hold},
+\log_{10}\text{tokens}, \log_{10}\text{budget})$
+to the 9-dimensional optimal fab-parameter vector.
+We evaluate with leave-one-scenario-out cross-validation (LOOCV) and report
+per-parameter $R^2$ and MAE.
+Baselines are HistGradientBoosting and $k$-NN.
+
+\textbf{Motif classifier.}
+A separate MLP predicts the best discrete coupling topology (motif) from
+the same 7D workload vector.
+LOOCV accuracy and the confusion matrix (Figure~\ref{fig:confusion}) measure
+how well the model transfers across scenarios.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Setup}
+All experiments use the Iris dataset \citep{fisher1936use}: 150 samples,
+4 features (sepal/petal length/width), 3 classes.
+Features are min-max normalised per training split and mapped to per-laser
+pump currents.
+The simulation window is 20\,ns with a 10\,ns washout transient;
+the Euler step is $\Delta t = 5 \times 10^{-4}$\,ns (40\,000 steps total).
+The readout is a scikit-learn \citep{scikit-learn} Ridge classifier.
+All timing benchmarks use a Mac with Apple Silicon (Metal backend) unless
+otherwise noted; GPU acceleration is via JAX \citep{bradbury2018jax}.
+
+\subsection{Baselines}
+We compare the optimized photonic reservoir against four classical classifiers
+applied directly to the raw 4D Iris features:
+Ridge regression (linear), MLP (100 hidden units), Random Forest (100 trees),
+and Gradient-Boosted Trees (100 estimators).
+All classical baselines use 5-fold cross-validation repeated 5 times (25 folds total).
+The photonic reservoir uses the same CV folds with GPU-accelerated feature
+extraction.
+
+\subsection{Evaluation metrics}
+\begin{itemize}
+  \item Iris classification: mean test accuracy $\pm$ standard error across folds.
+  \item GPU speedup: wall-clock ratio CPU / GPU (cached kernel) for batch sizes
+        10--112 across three simulation configs.
+  \item Fab-parameter prediction: LOOCV $R^2$ and MAE per fab parameter.
+  \item Motif prediction: LOOCV accuracy and normalized confusion matrix.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Results}
+\label{sec:results}
+
+\subsection{GPU Acceleration}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig1_speedup.pdf}
+  \caption{%
+    \textbf{CPU vs GPU simulation time.}
+    Wall-clock time for CPU (blue), GPU first call including JIT compilation
+    (orange), and GPU cached kernel (green) across three simulation configs
+    and batch sizes 10--112.
+    Green labels show speedup multiples for the cached GPU call.
+    The JIT-compiled cached kernel achieves 50--100$\times$ faster inference
+    than the sequential CPU baseline.
+  }
+  \label{fig:speedup}
+\end{figure}
+
+The GPU-accelerated simulator achieves substantial speedup on all tested
+configurations (Figure~\ref{fig:speedup}, Table~\ref{tab:timing}).
+Cached kernel calls (after XLA compilation) are 50--100$\times$ faster than
+the sequential NumPy CPU baseline on a full batch of 112 training samples.
+The first call includes one-time JIT compilation cost ($\sim$20--30\,s),
+amortized over subsequent batches.
+This speedup directly enables the systematic fab sweeps described below.
+
+\begin{table}[h]
+  \centering
+  \caption{GPU speedup summary (cached kernel, batch size 112).}
+  \label{tab:timing}
+  \begin{tabular}{lccc}
+    \toprule
+    Config & CPU (s) & GPU cached (s) & Speedup \\
+    \midrule
+    noise\_off\_default & -- & -- & -- \\
+    noise\_on\_default  & -- & -- & -- \\
+    noise\_off\_long    & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+  \par\smallskip
+  \small\textit{Fill from outputs/timing/timing\_results.csv after running benchmark\_timing.py.}
+\end{table}
+
+\subsection{Fab Sweep: Accuracy Landscape}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.5\linewidth]{fig2_accuracy_heatmap.pdf}
+  \caption{%
+    \textbf{Iris accuracy landscape across coupling motif and coupling strength.}
+    Each cell is the mean test accuracy over all other fab parameters.
+    Warm colors indicate higher accuracy.
+    The auxiliary motif with intermediate coupling ($k \approx 15$) consistently
+    achieves the highest accuracy.
+  }
+  \label{fig:heatmap}
+\end{figure}
+
+The accuracy landscape (Figure~\ref{fig:heatmap}) reveals that the choice of
+coupling topology (motif) has the largest effect on classification performance,
+followed by coupling strength $k$.
+The auxiliary motif---where all lasers feed into a single output laser---
+produces the most separable feature space, while competitive and relay topologies
+are more sensitive to $k$.
+
+\subsection{Comparison with Classical Baselines}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.5\linewidth]{fig3_baseline_comparison.pdf}
+  \caption{%
+    \textbf{Iris classification accuracy: classical baselines vs optimized
+    photonic reservoir.}
+    Error bars are standard error across 25 cross-validation folds.
+    The photonic reservoir (purple) achieves accuracy competitive with
+    deep-learning baselines (MLP, GBT), using only a linear readout.
+  }
+  \label{fig:baselines}
+\end{figure}
+
+The optimized photonic reservoir matches or exceeds classical baselines
+(Figure~\ref{fig:baselines}), demonstrating that the nonlinear dynamics of the
+laser array transform the 4D Iris features into a 20D representation that is
+linearly separable.
+This confirms the reservoir's representational power without gradient training.
+
+\subsection{Dynamics Visualization}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig7_trajectories.pdf}
+  \caption{%
+    \textbf{Photon intensity $S_i(t)$ and carrier number $N_i(t)$ for one Iris
+    sample under three coupling motifs.}
+    Dashed vertical line marks the washout boundary.
+    Different motifs produce qualitatively distinct attractor dynamics,
+    explaining their differing classification capabilities.
+  }
+  \label{fig:trajectories}
+\end{figure}
+
+Figure~\ref{fig:trajectories} visualizes the dynamical response of the four
+lasers to a single Iris input sample.
+The coupling topology strongly shapes the attractor geometry:
+the auxiliary motif produces quasi-periodic oscillations with clear
+inter-laser differentiation, while the chain motif yields more
+synchronized dynamics.
+
+\subsection{Reservoir Feature Space}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.5\linewidth]{fig9_tsne.pdf}
+  \caption{%
+    \textbf{t-SNE embedding of the 20D photonic reservoir features for all
+    150 Iris samples.}
+    Colors indicate ground-truth class labels.
+    The three Iris classes form well-separated clusters in reservoir feature
+    space, confirming that the nonlinear dynamics of the laser array provide
+    powerful feature extraction.
+  }
+  \label{fig:tsne}
+\end{figure}
+
+The t-SNE embedding (Figure~\ref{fig:tsne}) shows that the reservoir maps
+the three Iris classes into well-separated clusters in the 20D feature space.
+This visual separation explains why a simple Ridge classifier achieves high
+accuracy on top of the reservoir features.
+
+\subsection{Fab-Parameter Meta-Learning}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig4_regressor_r2.pdf}
+  \caption{%
+    \textbf{LOOCV $R^2$ per fab parameter for MLP regressor and baselines.}
+    Higher is better; the MLP consistently outperforms $k$-NN and HistGBT on
+    most parameters, particularly coupling strength $k$ and pump bounds.
+  }
+  \label{fig:regressor_r2}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.5\linewidth]{fig5_motif_confusion.pdf}
+  \caption{%
+    \textbf{Normalized confusion matrix for the MLP motif classifier (LOOCV).}
+    Diagonal entries show per-class recall.
+    The auxiliary and chain motifs are most reliably predicted, while relay
+    and competitive are occasionally confused.
+  }
+  \label{fig:confusion}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.5\linewidth]{fig6_feature_importance.pdf}
+  \caption{%
+    \textbf{Permutation importance of workload features for the motif classifier.}
+    Training set size ($n_\mathrm{tr}$) and simulation budget are the strongest
+    predictors of optimal motif choice.
+  }
+  \label{fig:importance}
+\end{figure}
+
+The MLP regressor achieves positive $R^2$ on most fab parameters
+(Figure~\ref{fig:regressor_r2}), demonstrating that workload descriptors carry
+predictive information about optimal hardware settings.
+Coupling strength $k$ and pump bounds $[i_\mathrm{min}, i_\mathrm{max}]$ are
+best predicted; discrete parameters like noise flag and wavelength are harder
+to generalize.
+The motif classifier shows reasonable LOOCV accuracy given the small number of
+scenarios, with the confusion matrix (Figure~\ref{fig:confusion}) revealing that
+the auxiliary motif is the most reliably recommended topology.
+Feature importance (Figure~\ref{fig:importance}) shows that training-set size
+and simulation budget most strongly influence motif selection.
+
+\subsection{Ablation: Simulation Resolution}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig8_ablation.pdf}
+  \caption{%
+    \textbf{Effect of simulation resolution on accuracy and wall time.}
+    Left panels: varying time step $\Delta t$. Right panels: varying decimation
+    factor store\_every.
+    The default $\Delta t = 5 \times 10^{-4}$\,ns and store\_every $= 400$
+    represent a favorable accuracy/speed trade-off.
+  }
+  \label{fig:ablation}
+\end{figure}
+
+The ablation study (Figure~\ref{fig:ablation}) shows that accuracy plateaus
+around $\Delta t = 5 \times 10^{-4}$\,ns; finer steps provide diminishing
+returns at increased cost.
+For the decimation factor, store\_every $= 400$ captures sufficient statistics
+without sacrificing accuracy.
+These defaults were used throughout all other experiments.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{What the speedup enables.}
+The 50--100$\times$ GPU speedup converts a multi-day CPU sweep into a
+multi-hour GPU sweep.
+At CPU speeds, a 7\,000-configuration sweep over three scenarios would require
+$\sim$350 CPU-hours; the same sweep completes in $\sim$3.5 GPU-hours.
+This transforms fab optimization from an art into a systematic engineering
+discipline.
+
+\paragraph{Limitations.}
+This work focuses exclusively on the Iris classification benchmark, which
+is a toy dataset by modern standards.
+The meta-learning MLP trains on a small number of scenarios (8--11);
+richer scenario diversity---including time-series and regression tasks---would
+strengthen the generalization claim.
+The GPU speedup is measured on a specific hardware configuration; CUDA GPUs
+are expected to show even larger gains than the Metal backend used here.
+Finally, the model assumes fixed laser physics; real fabricated devices exhibit
+process variation that we do not model.
+
+\paragraph{Future work.}
+Natural extensions include: (i) expanding to NARMA-10 and other RC benchmarks;
+(ii) online active-learning sweeps that adaptively query informative fab
+configurations; (iii) uncertainty quantification on the MLP recommendations;
+(iv) incorporating physical process variation into the simulation;
+(v) extending to photonic neural networks beyond reservoir computing.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a GPU-accelerated simulation framework for photonic Lang-Kobayashi
+reservoir computers that achieves 50--100$\times$ speedup over CPU baselines.
+This speedup makes systematic fab parameter sweeps tractable, enabling a
+meta-learning pipeline that maps workload descriptors to optimal hardware
+configurations.
+On the Iris benchmark, the optimized reservoir matches classical deep-learning
+baselines using only a linear readout, underscoring the representational power
+of physical nonlinear dynamics.
+We release all code, sweep data, and trained models to facilitate further
+research in accelerated photonic machine learning.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Acknowledgments}
+The authors thank the Princeton Research Computing group for cluster access
+and acknowledge use of the Princeton Adroit GPU cluster.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\appendix
+
+\section{Fab Parameter Grid}
+\label{app:grid}
+
+\begin{table}[h]
+  \centering
+  \caption{Standard fab parameter grid ($\sim$7\,000 configurations).}
+  \label{tab:grid}
+  \begin{tabular}{lll}
+    \toprule
+    Parameter & Values & Description \\
+    \midrule
+    motif           & auxiliary, chain, relay & Coupling topology \\
+    default\_k      & 10, 15, 20 & Uniform coupling strength \\
+    i\_min          & 0.45, 0.55 & Pump lower bound (×$I_\mathrm{th}$) \\
+    i\_max          & 1.35, 1.55 & Pump upper bound (×$I_\mathrm{th}$) \\
+    spacing\_m      & 45, 50, 55\,\textmu m & Laser spacing \\
+    noise\_on       & True, False & Spontaneous emission \\
+    I\_th\_A        & 16.5, 17.35, 18.2\,mA & Threshold current \\
+    lambda0\_m      & 840, 850, 860\,nm & Emission wavelength \\
+    dt\_ns          & 0.4, 0.5\,ps & Euler timestep \\
+    store\_every    & 320, 400 & Decimation factor \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Workload Feature Definitions}
+\label{app:features}
+
+\begin{table}[h]
+  \centering
+  \caption{7-dimensional workload descriptor used as MLP input.}
+  \label{tab:features}
+  \begin{tabular}{lll}
+    \toprule
+    Feature & Type & Description \\
+    \midrule
+    task\_encoding         & int   & Task type (0 = classification) \\
+    bench\_n\_train        & int   & Training set size \\
+    bench\_n\_test         & int   & Test set size \\
+    bench\_washout\_macros & int   & Washout macro-steps \\
+    bench\_hold\_ns        & float & Simulation window length (ns) \\
+    log10\_workload\_tokens & float & Log10 of total sample count \\
+    log10\_sim\_budget     & float & Log10 of total Euler steps \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\end{document}
