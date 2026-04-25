@@ -648,7 +648,7 @@ def fig9_tsne(sweep_csv: Path | None, out: Path) -> None:
         F, _ = build_reservoir_dataset(X01, y, base_seed=30, **best_kw)
 
     print("  Running t-SNE...", flush=True)
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000)
+    tsne = TSNE(n_components=2, random_state=42, perplexity=30, max_iter=1000)
     Z = tsne.fit_transform(F)
 
     class_names = iris.target_names.tolist()
