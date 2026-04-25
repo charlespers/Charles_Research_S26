@@ -1,0 +1,4 @@
+model,accuracy_mean,accuracy_std
+MLP,0.0,0.0
+HistGBT,0.0,0.0
+kNN,0.1429,0.0

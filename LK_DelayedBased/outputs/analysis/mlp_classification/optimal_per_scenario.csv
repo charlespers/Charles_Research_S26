@@ -1,0 +1,4 @@
+scenario_tag,task,task_encoding,bench_n_train,bench_n_test,bench_washout_macros,bench_hold_ns,log10_workload_tokens,log10_sim_budget,optimal_default_k,optimal_i_min,optimal_i_max,optimal_spacing_m,optimal_noise_float,optimal_motif,best_metric,metric_std_at_optimum,metric_name,maximize_metric,robust_score,latency_euler_steps_at_optimum,optimal_I_th_A,optimal_lambda0_m,optimal_dt_ns,optimal_store_every
+iris_small_test,iris,0,128,22,0,20.0,2.1789769472931693,6.70926996097583,12.0,0.5,1.5,5e-05,1.0,chain,1.0,0.0,accuracy_test,True,1.0,5120000,0.01735,8.5e-07,0.0005,400.0
+iris_default,iris,0,112,38,0,20.0,2.1789769472931693,6.651278013998144,18.0,0.5,1.5,5e-05,1.0,auxiliary,1.0,0.0,accuracy_test,True,1.0,4480000,0.01735,8.5e-07,0.0005,400.0
+iris_large_test,iris,0,90,60,0,20.0,2.1789769472931693,6.556302500767287,12.0,0.5,1.5,5e-05,1.0,chain,1.0,0.0,accuracy_test,True,1.0,3600000,0.01735,8.5e-07,0.0005,400.0

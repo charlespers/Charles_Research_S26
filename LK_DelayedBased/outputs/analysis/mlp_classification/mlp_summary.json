@@ -1,0 +1,32 @@
+{
+  "n_scenarios": 7,
+  "n_motif_classes": 4,
+  "motif_classes": [
+    "auxiliary",
+    "chain",
+    "competitive",
+    "relay"
+  ],
+  "mlp_regressor_mean_r2": -13802.5315,
+  "mlp_classifier_accuracy": 0.0,
+  "feature_cols": [
+    "task_encoding",
+    "bench_n_train",
+    "bench_n_test",
+    "bench_washout_macros",
+    "bench_hold_ns",
+    "log10_workload_tokens",
+    "log10_sim_budget"
+  ],
+  "target_cols": [
+    "optimal_default_k",
+    "optimal_i_min",
+    "optimal_i_max",
+    "optimal_spacing_m",
+    "optimal_noise_float",
+    "optimal_I_th_A",
+    "optimal_lambda0_m",
+    "optimal_dt_ns",
+    "optimal_store_every"
+  ]
+}
