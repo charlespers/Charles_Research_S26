@@ -399,11 +399,114 @@ def simulate_iris_batch_gpu(
 ) -> jnp.ndarray:             # (batch, 20)
     """
     Vectorized (vmapped) simulation of a batch of independent Iris samples.
-    All samples share the same coupling matrices and physics parameters.
+    Uses a module-level JIT cache keyed on static structural params so that
+    different fab configs sharing the same (noise_on, ring_depth, n_steps, …)
+    reuse the same compiled XLA kernel — local_Mxc/local_Mxs are passed as
+    traced runtime arguments, not closed-over XLA constants.
     """
-    fn = functools.partial(simulate_one_iris_sample_gpu, gpu_params=gpu_params)
-    batched = jax.vmap(fn, in_axes=(0, 0))
-    return batched(X01_batch, rng_keys)
+    return _batch_sim_cached(
+        X01_batch,
+        rng_keys,
+        gpu_params["local_Mxc"],
+        gpu_params["local_Mxs"],
+        jnp.array(gpu_params["i_min"]),
+        jnp.array(gpu_params["i_max"]),
+        jnp.array(gpu_params["I_th_A"]),
+        jnp.array(gpu_params["dt_ns"]),
+        noise_on=bool(gpu_params["noise_on"]),
+        ring_depth=int(gpu_params["ring_depth"]),
+        n_steps=int(gpu_params["n_steps"]),
+        washout_step=int(gpu_params["washout_step"]),
+        store_every=int(gpu_params["store_every"]),
+        num_lasers=int(gpu_params["num_lasers"]),
+        delay_list=tuple(gpu_params["delay_list"]),
+        group_Mxc_list=tuple(
+            tuple(r.tolist()) for r in gpu_params["group_Mxc_list"]
+        ) if gpu_params["group_Mxc_list"] else (),
+        group_Mxs_list=tuple(
+            tuple(r.tolist()) for r in gpu_params["group_Mxs_list"]
+        ) if gpu_params["group_Mxs_list"] else (),
+    )
+
+
+@functools.partial(
+    jax.jit,
+    static_argnames=(
+        "noise_on", "ring_depth", "n_steps", "washout_step",
+        "store_every", "num_lasers", "delay_list",
+        "group_Mxc_list", "group_Mxs_list",
+    ),
+)
+def _batch_sim_cached(
+    X01_batch,
+    rng_keys,
+    local_Mxc,      # (num_lasers, num_lasers) — traced arg, not XLA constant
+    local_Mxs,      # (num_lasers, num_lasers) — traced arg, not XLA constant
+    i_min,          # scalar JAX array — traced arg
+    i_max,          # scalar JAX array — traced arg
+    I_th_A,         # scalar JAX array — traced arg
+    dt_ns,          # scalar JAX array — traced arg
+    *,
+    noise_on, ring_depth, n_steps, washout_step, store_every,
+    num_lasers, delay_list, group_Mxc_list, group_Mxs_list,
+):
+    """JIT-compiled batched simulation.  local_Mxc/local_Mxs/i_min/i_max/I_th_A
+    are traced arguments (shapes only cached), so different fab configs sharing
+    the same structural signature reuse this kernel without recompilation."""
+    # Reconstruct group coupling arrays from static tuples
+    group_Mxc = [jnp.array(m) for m in group_Mxc_list]
+    group_Mxs = [jnp.array(m) for m in group_Mxs_list]
+
+    def one_sample(x01_row, rng_key):
+        # Compute per-sample pump (depends on traced i_min, i_max, I_th_A)
+        f01 = jnp.clip(x01_row, 0.0, 1.0)
+        P_ops = (i_min + f01 * (i_max - i_min)) * I_th_A / _E_CHARGE * 1e-9
+
+        step_fn = _make_step_fn(
+            local_Mxc=local_Mxc,
+            local_Mxs=local_Mxs,
+            group_Mxc_list=group_Mxc,
+            group_Mxs_list=group_Mxs,
+            delay_list=list(delay_list),
+            ring_depth=ring_depth,
+            num_lasers=num_lasers,
+            alpha=3.0, g=1.2e-5, s=5e-7,
+            gamma=496.0, gamma_e=0.651, beta_sp=1e-5, N0=1.25e8,
+            P_ops=P_ops,
+            dt_ns=dt_ns,
+            noise_on=noise_on,
+            washout_step=washout_step,
+            store_every=store_every,
+        )
+
+        Nlas = num_lasers
+        x_ring = jnp.broadcast_to(
+            jnp.full((Nlas,), 1e-3)[None, :], (ring_depth, Nlas)
+        ).copy()
+        y_ring = jnp.broadcast_to(
+            jnp.zeros((Nlas,))[None, :], (ring_depth, Nlas)
+        ).copy()
+        N0_val = jnp.zeros((Nlas,))
+        neg_inf = jnp.full((Nlas,), -jnp.inf)
+        pos_inf = jnp.full((Nlas,),  jnp.inf)
+        init_carry = (
+            x_ring, y_ring, N0_val,
+            jnp.array(0, dtype=jnp.int64),
+            rng_key,
+            jnp.zeros((Nlas,)), pos_inf, neg_inf,
+            jnp.zeros((Nlas,)), jnp.zeros((Nlas,)),
+            jnp.array(0, dtype=jnp.int64),
+        )
+        final_carry, _ = jax.lax.scan(step_fn, init_carry, xs=None, length=n_steps)
+        _, _, _, _, _, sum_I, min_I, max_I, M2_I, sum_N, count = final_carry
+        count_f = jnp.maximum(count.astype(jnp.float64), 1.0)
+        mean_I = sum_I / count_f
+        std_I  = jnp.sqrt(jnp.maximum(M2_I / count_f, 0.0))
+        mean_N = sum_N / count_f
+        feats  = jnp.stack([mean_I, min_I, max_I, std_I, mean_N], axis=1)
+        return feats.ravel()
+
+    return jax.vmap(one_sample, in_axes=(0, 0))(X01_batch, rng_keys)
 
 
 # ============================================================
