@@ -6,22 +6,22 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=logs/paper_%j.out
 #SBATCH --error=logs/paper_%j.out
-#
-# Generates all 9 paper figures. Requires:
-#   outputs/timing/timing_results.csv  (from benchmark_timing.slurm)
-#   pipeline_iris/outputs/sweeps/fab_long/**/sweep_long.csv  (from standard_sweep.slurm)
-#   outputs/analysis/mlp_classification/  (from mlp step below)
-#
-# Run this AFTER benchmark_timing.slurm and standard_sweep.slurm have both finished.
 
+set -e
 mkdir -p logs
+
 module purge
 module load anaconda3/2024.2
+source $(conda info --base)/etc/profile.d/conda.sh
 conda activate lk_gpu
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
-cd $SLURM_SUBMIT_DIR
 
-# Identify most recent sweep CSV
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export PYTHONUNBUFFERED=1
+
+cd $SLURM_SUBMIT_DIR
+echo "Working dir: $(pwd)"
+echo "Python: $(which python)"
+
 SWEEP_CSV=$(ls -t pipeline_iris/outputs/sweeps/fab_long/*/sweep_long.csv 2>/dev/null | head -1)
 if [ -z "$SWEEP_CSV" ]; then
   echo "ERROR: No sweep_long.csv found. Run standard_sweep.slurm first." >&2
@@ -29,12 +29,8 @@ if [ -z "$SWEEP_CSV" ]; then
 fi
 echo "Using sweep: $SWEEP_CSV"
 
-# Step 1: Train MLP harness
-python mlp_classification_harness.py \
-    --sweep-csv "$SWEEP_CSV" \
-    --output-dir outputs/analysis/mlp_classification
+python mlp_classification_harness.py --sweep-csv "$SWEEP_CSV" --output-dir outputs/analysis/mlp_classification
 
-# Step 2: Generate all 9 figures
 python generate_figures.py \
     --timing-csv outputs/timing/timing_results.csv \
     --sweep-csv "$SWEEP_CSV" \
