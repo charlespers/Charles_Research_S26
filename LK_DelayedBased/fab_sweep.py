@@ -296,19 +296,25 @@ def run_fab_sweep_long(
 
     rows_raw: list[dict[str, Any]] = []
     rep_offset = 0
+    runs_path  = out_dir / "sweep_runs.csv"
+    _ckpt_written = 0
+    _CKPT_EVERY   = 50  # flush partial CSV every N configs
 
     for sc in scenarios:
         desc = scenario_bench_descriptor(sc)
         tag  = sc["scenario_tag"]
 
         if design == "factorial":
-            fab_iter = _iter_fab_factorial(fab_grid)
+            fab_iter = list(_iter_fab_factorial(fab_grid))
         elif design == "lhc":
-            fab_iter = _iter_fab_lhc(n_lhc_samples, fab_grid, seed + rep_offset)
+            fab_iter = list(_iter_fab_lhc(n_lhc_samples, fab_grid, seed + rep_offset))
         else:
             raise ValueError("design must be 'factorial' or 'lhc'")
 
-        for fab in fab_iter:
+        n_fab = len(fab_iter)
+        print(f"[sweep] scenario={tag}  configs={n_fab}", flush=True)
+
+        for cfg_i, fab in enumerate(fab_iter):
             lat = estimate_latency_euler_steps(sc, fab)
             lsb = log10_sim_budget(sc, fab)
             for rep in range(n_replicates):
@@ -339,6 +345,14 @@ def run_fab_sweep_long(
                     "run_seed":           run_seed,
                 })
             rep_offset += 17
+
+            # Checkpoint: flush partial CSV so progress survives job kills
+            new_rows = len(rows_raw) - _ckpt_written
+            if new_rows >= _CKPT_EVERY:
+                pd.DataFrame(rows_raw).to_csv(runs_path, index=False)
+                _ckpt_written = len(rows_raw)
+                print(f"  [{tag}] {cfg_i+1}/{n_fab} configs  "
+                      f"({len(rows_raw)} rows saved)", flush=True)
 
     df_runs    = pd.DataFrame(rows_raw)
     runs_path  = out_dir / "sweep_runs.csv"
