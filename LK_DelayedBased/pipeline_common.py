@@ -48,6 +48,13 @@ def run_cli(pipe_root: Path) -> None:
         help="Use a 4-config fab grid and a single Iris scenario (fast).",
     )
     ap.add_argument(
+        "--fast-grid",
+        action="store_true",
+        dest="fast_grid",
+        help="Fixed dt_ns/store_every (single JAX JIT), varied physical params "
+             "(~800 configs). Runs in ~30 min on GPU vs 12+ hr for standard grid.",
+    )
+    ap.add_argument(
         "--stretch-scenarios",
         action="store_true",
         help="Use three Iris scenarios (15%%, 25%%, 40%% test splits) instead of one.",
@@ -100,6 +107,22 @@ def run_cli(pipe_root: Path) -> None:
             "lambda0_ms":   [850e-9],
             "dt_ns_s":      [5e-4],
             "store_everys": [400],
+            "augment_inputs": [True],
+        }
+    elif args.fast_grid:
+        # Fixed simulation resolution (single JAX JIT) + varied physical params.
+        # 3×5×3×3×3×2×2×2 = 1080 configs — runs in ~30 min on A100.
+        grid = {
+            "motifs":       ["auxiliary", "chain", "relay"],
+            "default_ks":   [8.0, 12.0, 15.0, 18.0, 22.0],
+            "i_mins":       [0.4, 0.5, 0.6],
+            "i_maxs":       [1.3, 1.5, 1.7],
+            "spacing_ms":   [4e-5, 5e-5, 6e-5],
+            "noise_flags":  [True, False],
+            "I_th_As":      [0.01735],
+            "lambda0_ms":   [850e-9],
+            "dt_ns_s":      [5e-4],      # fixed → single JIT compilation
+            "store_everys": [400],        # fixed → same JIT
             "augment_inputs": [True],
         }
     else:
