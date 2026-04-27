@@ -402,14 +402,31 @@ def scenarios_iris_stretch() -> list[dict[str, Any]]:
     ]
 
 
-def scenarios_for_task(*, stretch: bool = False) -> list[dict[str, Any]]:
+def scenarios_iris_many() -> list[dict[str, Any]]:
+    """Seven Iris scenarios spanning 10–40 % test splits for robust meta-learning."""
+    return [
+        {"scenario_tag": "iris_10pct",  "task": "iris", "test_size": 0.10, "base_seed": 30},
+        {"scenario_tag": "iris_15pct",  "task": "iris", "test_size": 0.15, "base_seed": 30},
+        {"scenario_tag": "iris_20pct",  "task": "iris", "test_size": 0.20, "base_seed": 30},
+        {"scenario_tag": "iris_25pct",  "task": "iris", "test_size": 0.25, "base_seed": 30},
+        {"scenario_tag": "iris_30pct",  "task": "iris", "test_size": 0.30, "base_seed": 30},
+        {"scenario_tag": "iris_35pct",  "task": "iris", "test_size": 0.35, "base_seed": 30},
+        {"scenario_tag": "iris_40pct",  "task": "iris", "test_size": 0.40, "base_seed": 30},
+    ]
+
+
+def scenarios_for_task(*, stretch: bool = False, many: bool = False) -> list[dict[str, Any]]:
     """Return the appropriate Iris scenario list.
 
     Parameters
     ----------
     stretch : bool
         If True, use three workload shapes; otherwise just the default split.
+    many : bool
+        If True, use seven workload shapes (10–40 % test splits).
     """
+    if many:
+        return scenarios_iris_many()
     return scenarios_iris_stretch() if stretch else scenarios_iris_quick()
 
 

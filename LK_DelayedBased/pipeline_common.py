@@ -52,12 +52,25 @@ def run_cli(pipe_root: Path) -> None:
         action="store_true",
         dest="fast_grid",
         help="Fixed dt_ns/store_every (single JAX JIT), varied physical params "
-             "(~800 configs). Runs in ~30 min on GPU vs 12+ hr for standard grid.",
+             "(~1080 configs). Runs in ~30 min on GPU vs 12+ hr for standard grid.",
+    )
+    ap.add_argument(
+        "--rich-grid",
+        action="store_true",
+        dest="rich_grid",
+        help="Expanded fixed-JIT grid: 3×6×4×4×4×2 = 2304 configs. "
+             "~5 h on V100, yields richer fab-landscape coverage for meta-learning.",
     )
     ap.add_argument(
         "--stretch-scenarios",
         action="store_true",
         help="Use three Iris scenarios (15%%, 25%%, 40%% test splits) instead of one.",
+    )
+    ap.add_argument(
+        "--many-scenarios",
+        action="store_true",
+        dest="many_scenarios",
+        help="Use seven Iris scenarios (10–40%% test splits) for robust LOOCV meta-learning.",
     )
     ap.add_argument(
         "--standard-grid",
@@ -111,7 +124,7 @@ def run_cli(pipe_root: Path) -> None:
         }
     elif args.fast_grid:
         # Fixed simulation resolution (single JAX JIT) + varied physical params.
-        # 3×5×3×3×3×2×2×2 = 1080 configs — runs in ~30 min on A100.
+        # 3×5×3×3×3×2 = 810 configs — runs in ~30 min on A100.
         grid = {
             "motifs":       ["auxiliary", "chain", "relay"],
             "default_ks":   [8.0, 12.0, 15.0, 18.0, 22.0],
@@ -125,10 +138,26 @@ def run_cli(pipe_root: Path) -> None:
             "store_everys": [400],        # fixed → same JIT
             "augment_inputs": [True],
         }
+    elif args.rich_grid:
+        # Expanded fixed-JIT grid for dense fab-landscape coverage.
+        # 3×6×4×4×4×2 = 2304 configs — ~5 h on V100 with 7 scenarios.
+        grid = {
+            "motifs":       ["auxiliary", "chain", "relay"],
+            "default_ks":   [6.0, 9.0, 12.0, 15.0, 18.0, 22.0],
+            "i_mins":       [0.30, 0.45, 0.60, 0.75],
+            "i_maxs":       [1.20, 1.50, 1.80, 2.10],
+            "spacing_ms":   [3e-5, 4e-5, 5e-5, 6e-5],
+            "noise_flags":  [True, False],
+            "I_th_As":      [0.01735],
+            "lambda0_ms":   [850e-9],
+            "dt_ns_s":      [5e-4],      # fixed → single JIT compilation
+            "store_everys": [400],        # fixed → same JIT
+            "augment_inputs": [True],
+        }
     else:
         grid = default_fab_grid_standard() if args.standard_grid else default_fab_grid_quick()
 
-    scenarios = scenarios_for_task(stretch=args.stretch_scenarios)
+    scenarios = scenarios_for_task(stretch=args.stretch_scenarios, many=args.many_scenarios)
 
     # ── Run sweep ─────────────────────────────────────────────────────────────
     _, long_csv = run_fab_sweep_long(
