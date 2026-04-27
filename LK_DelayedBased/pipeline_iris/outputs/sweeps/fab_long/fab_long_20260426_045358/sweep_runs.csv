@@ -1,0 +1,13 @@
+scenario_tag,task,task_encoding,bench_n_train,bench_n_test,bench_washout_macros,bench_hold_ns,log10_sim_budget,latency_euler_steps,motif,default_k,i_min,i_max,spacing_m,spacing_um,noise_on,I_th_A,lambda0_m,dt_ns,store_every,augment_input,metric,metric_name,maximize_metric,replicate_id,run_seed
+iris_small_test,iris,0,128,22,0,20.0,6.70926996097583,5120000,auxiliary,12.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,0.9565217391304348,accuracy_test,True,0,0
+iris_small_test,iris,0,128,22,0,20.0,6.70926996097583,5120000,auxiliary,18.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,0.9565217391304348,accuracy_test,True,0,17
+iris_small_test,iris,0,128,22,0,20.0,6.70926996097583,5120000,chain,12.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,1.0,accuracy_test,True,0,34
+iris_small_test,iris,0,128,22,0,20.0,6.70926996097583,5120000,chain,18.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,1.0,accuracy_test,True,0,51
+iris_default,iris,0,112,38,0,20.0,6.6512780139981444,4480000,auxiliary,12.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,0.9736842105263158,accuracy_test,True,0,68
+iris_default,iris,0,112,38,0,20.0,6.6512780139981444,4480000,auxiliary,18.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,1.0,accuracy_test,True,0,85
+iris_default,iris,0,112,38,0,20.0,6.6512780139981444,4480000,chain,12.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,0.9736842105263158,accuracy_test,True,0,102
+iris_default,iris,0,112,38,0,20.0,6.6512780139981444,4480000,chain,18.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,0.9736842105263158,accuracy_test,True,0,119
+iris_large_test,iris,0,90,60,0,20.0,6.556302500767288,3600000,auxiliary,12.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,0.9833333333333333,accuracy_test,True,0,136
+iris_large_test,iris,0,90,60,0,20.0,6.556302500767288,3600000,auxiliary,18.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,0.9833333333333333,accuracy_test,True,0,153
+iris_large_test,iris,0,90,60,0,20.0,6.556302500767288,3600000,chain,12.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,1.0,accuracy_test,True,0,170
+iris_large_test,iris,0,90,60,0,20.0,6.556302500767288,3600000,chain,18.0,0.5,1.5,5e-05,50.0,True,0.01735,8.5e-07,0.0005,400,True,1.0,accuracy_test,True,0,187
